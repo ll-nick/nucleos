@@ -1,16 +1,14 @@
 return {
 	tasks = {
 		test_task = {
-			module = "builtin.file",
-			options = {
+			module = nucleos.builtin.file({
 				path = "/tmp/test.txt",
-			},
+			}),
 		},
 		another_task = {
-			module = "builtin.echo",
-			options = {
+			module = nucleos.builtin.echo({
 				message = "Hello, World!",
-			},
+			}),
 		},
 	},
 }

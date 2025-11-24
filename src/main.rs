@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use mlua::{Lua, Result, Table};
+use mlua::{Lua, ObjectLike, Result, Table, UserData, UserDataMethods};
 
 pub trait Module {
     fn apply(&self) -> Result<()>;
@@ -19,7 +19,6 @@ impl Module for Echo {
     }
 
     fn undo(&self) -> Result<()> {
-        // nothing to undo for echo
         Ok(())
     }
 }
@@ -44,31 +43,57 @@ impl Module for File {
     }
 }
 
+impl UserData for Echo {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("apply", |_, this, ()| this.apply());
+        methods.add_method("undo", |_, this, ()| this.undo());
+    }
+}
+
+impl UserData for File {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("apply", |_, this, ()| this.apply());
+        methods.add_method("undo", |_, this, ()| this.undo());
+    }
+}
+
+fn register_builtins(lua: &Lua) -> Result<()> {
+    let builtin = lua.create_table()?;
+
+    let echo = lua.create_function(|_, opts: Table| {
+        let message: String = opts.get("message")?;
+        Ok(Echo { message })
+    })?;
+    builtin.set("echo", echo)?;
+
+    let file = lua.create_function(|_, opts: Table| {
+        let path: String = opts.get("path")?;
+        Ok(File { path })
+    })?;
+    builtin.set("file", file)?;
+
+    let nucleos = lua.create_table()?;
+    nucleos.set("builtin", builtin.clone())?;
+    lua.globals().set("nucleos", nucleos)?;
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
-    // Initialize Lua
     let lua = Lua::new();
 
-    // Load the config file
+    register_builtins(&lua)?;
+
     let config: Table = lua.load(&std::fs::read_to_string("config.lua")?).eval()?;
 
-    // Access fields
     let tasks: Table = config.get("tasks")?;
-
     for pair in tasks.pairs::<String, Table>() {
         let (task_name, task_table) = pair?;
-        let module: String = task_table.get("module")?;
-        let options: Table = task_table.get("options")?;
 
-        println!("Task Name: {}", task_name);
-        println!("Module: {}", module);
-        println!("Options:");
+        let module: mlua::AnyUserData = task_table.get("module")?;
 
-        for opt_pair in options.pairs::<String, mlua::Value>() {
-            let (opt_key, opt_value) = opt_pair?;
-            println!("  {}: {:?}", opt_key, opt_value);
-        }
-
-        println!();
+        println!("Running task: {}", task_name);
+        module.call_method::<()>("apply", ())?;
     }
 
     Ok(())
