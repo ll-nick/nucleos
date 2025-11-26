@@ -1,7 +1,25 @@
 use std::fs;
 use std::path::Path;
 
+use clap::{Parser, Subcommand};
 use mlua::{Lua, ObjectLike, Result, Table, UserData, UserDataMethods};
+
+#[derive(Parser)]
+#[command(name = "nucleos")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Apply all tasks
+    Apply,
+    /// Undo all tasks
+    Undo,
+    /// List all tasks
+    Status,
+}
 
 pub trait Module {
     fn apply(&self) -> Result<()>;
@@ -80,20 +98,39 @@ fn register_builtins(lua: &Lua) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let lua = Lua::new();
+    let cli = Cli::parse();
 
+    let lua = Lua::new();
     register_builtins(&lua)?;
 
     let config: Table = lua.load(&std::fs::read_to_string("config.lua")?).eval()?;
+    let tasks_table: Table = config.get("tasks")?;
 
-    let tasks: Table = config.get("tasks")?;
-    for pair in tasks.pairs::<String, Table>() {
-        let (task_name, task_table) = pair?;
-
-        let module: mlua::AnyUserData = task_table.get("module")?;
-
-        println!("Running task: {}", task_name);
-        module.call_method::<()>("apply", ())?;
+    match cli.command {
+        Commands::Apply => {
+            for pair in tasks_table.pairs::<String, Table>() {
+                let (name, task_table) = pair?;
+                let module: mlua::AnyUserData = task_table.get("module")?;
+                println!("Applying task: {}", name);
+                module.call_method::<()>("apply", ())?;
+            }
+        }
+        Commands::Undo => {
+            for pair in tasks_table.pairs::<String, Table>() {
+                let (name, task_table) = pair?;
+                let module: mlua::AnyUserData = task_table.get("module")?;
+                println!("Undoing task: {}", name);
+                module.call_method::<()>("undo", ())?;
+            }
+        }
+        Commands::Status => {
+            println!("Tasks loaded:");
+            for pair in tasks_table.pairs::<String, Table>() {
+                let (name, task_table) = pair?;
+                let module: mlua::AnyUserData = task_table.get("module")?;
+                println!(" - {}", name);
+            }
+        }
     }
 
     Ok(())
