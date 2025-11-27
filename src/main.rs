@@ -21,6 +21,13 @@ enum Commands {
     Status,
 }
 
+pub enum TaskState {
+    Applied,
+    OutOfDate,
+    NotApplied,
+    Stateless,
+}
+
 pub enum UndoSafety {
     /// Fully revertible without side effects
     Safe,
@@ -41,6 +48,7 @@ pub trait Module {
     fn apply(&self) -> Result<()>;
     fn undo(&self) -> Result<()>;
     fn undo_safety(&self) -> UndoSafety;
+    fn state(&self) -> Result<TaskState>;
 }
 
 pub struct Echo {
@@ -59,6 +67,10 @@ impl Module for Echo {
 
     fn undo_safety(&self) -> UndoSafety {
         UndoSafety::Safe
+    }
+
+    fn state(&self) -> Result<TaskState> {
+        Ok(TaskState::Stateless)
     }
 }
 
@@ -83,6 +95,15 @@ impl Module for File {
 
     fn undo_safety(&self) -> UndoSafety {
         UndoSafety::Risky
+    }
+
+    fn state(&self) -> Result<TaskState> {
+        let exists = Path::new(&self.path).exists();
+        if exists {
+            Ok(TaskState::Applied)
+        } else {
+            Ok(TaskState::NotApplied)
+        }
     }
 }
 
