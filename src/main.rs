@@ -21,9 +21,26 @@ enum Commands {
     Status,
 }
 
+pub enum UndoSafety {
+    /// Fully revertible without side effects
+    Safe,
+
+    /// Reversible but may have side effects
+    Risky,
+
+    /// Cannot be undone automatically
+    Impossible,
+}
+
+pub enum UndoMode {
+    Safe,  // Only Safe
+    Risky, // Allow Safe + Risky
+}
+
 pub trait Module {
     fn apply(&self) -> Result<()>;
     fn undo(&self) -> Result<()>;
+    fn undo_safety(&self) -> UndoSafety;
 }
 
 pub struct Echo {
@@ -38,6 +55,10 @@ impl Module for Echo {
 
     fn undo(&self) -> Result<()> {
         Ok(())
+    }
+
+    fn undo_safety(&self) -> UndoSafety {
+        UndoSafety::Safe
     }
 }
 
@@ -58,6 +79,10 @@ impl Module for File {
             println!("File removed: {}", self.path);
         }
         Ok(())
+    }
+
+    fn undo_safety(&self) -> UndoSafety {
+        UndoSafety::Risky
     }
 }
 
