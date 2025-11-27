@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
-use mlua::{Lua, ObjectLike, Result, Table, UserData, UserDataMethods};
+use mlua::{FromLua, IntoLua, Lua, ObjectLike, Result, Table, UserData, UserDataMethods, Value};
 
 #[derive(Parser)]
 #[command(name = "nucleos")]
@@ -16,7 +16,10 @@ enum Commands {
     /// Apply all tasks
     Apply,
     /// Undo all tasks
-    Undo,
+    Undo {
+        #[arg(long)]
+        risky: bool,
+    },
     /// List all tasks
     Status,
 }
@@ -28,6 +31,7 @@ pub enum TaskState {
     Stateless,
 }
 
+#[derive(PartialEq)]
 pub enum UndoSafety {
     /// Fully revertible without side effects
     Safe,
@@ -39,6 +43,44 @@ pub enum UndoSafety {
     Impossible,
 }
 
+impl IntoLua for UndoSafety {
+    fn into_lua(self, lua: &Lua) -> Result<Value> {
+        let s = match self {
+            UndoSafety::Safe => "safe",
+            UndoSafety::Risky => "risky",
+            UndoSafety::Impossible => "impossible",
+        };
+        Ok(Value::String(lua.create_string(s)?))
+    }
+}
+
+impl FromLua for UndoSafety {
+    fn from_lua(value: Value, lua: &Lua) -> Result<Self> {
+        let ty = value.type_name();
+        let string = lua
+            .coerce_string(value)?
+            .ok_or_else(|| mlua::Error::FromLuaConversionError {
+                from: ty,
+                to: "UndoSafety".to_string(),
+                message: Some("expected string or number".to_string()),
+            })?
+            .to_str()?
+            .to_owned();
+
+        match string.as_str() {
+            "safe" => Ok(UndoSafety::Safe),
+            "risky" => Ok(UndoSafety::Risky),
+            "impossible" => Ok(UndoSafety::Impossible),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: "string",
+                to: "UndoSafety".to_string(),
+                message: Some("Unknown undo safety type".to_string()),
+            }),
+        }
+    }
+}
+
+#[derive(PartialEq)]
 pub enum UndoMode {
     Safe,  // Only Safe
     Risky, // Allow Safe + Risky
@@ -94,7 +136,7 @@ impl Module for File {
     }
 
     fn undo_safety(&self) -> UndoSafety {
-        UndoSafety::Risky
+        UndoSafety::Safe
     }
 
     fn state(&self) -> Result<TaskState> {
@@ -111,6 +153,7 @@ impl UserData for Echo {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("apply", |_, this, ()| this.apply());
         methods.add_method("undo", |_, this, ()| this.undo());
+        methods.add_method("undo_safety", |_, this, ()| Ok(this.undo_safety()));
     }
 }
 
@@ -118,6 +161,7 @@ impl UserData for File {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("apply", |_, this, ()| this.apply());
         methods.add_method("undo", |_, this, ()| this.undo());
+        methods.add_method("undo_safety", |_, this, ()| Ok(this.undo_safety()));
     }
 }
 
@@ -161,12 +205,25 @@ fn main() -> Result<()> {
                 module.call_method::<()>("apply", ())?;
             }
         }
-        Commands::Undo => {
+        Commands::Undo { risky } => {
+            let mode = if risky {
+                UndoMode::Risky
+            } else {
+                UndoMode::Safe
+            };
+
             for pair in tasks_table.pairs::<String, Table>() {
                 let (name, task_table) = pair?;
                 let module: mlua::AnyUserData = task_table.get("module")?;
-                println!("Undoing task: {}", name);
-                module.call_method::<()>("undo", ())?;
+                let safety = module.call_method::<UndoSafety>("undo_safety", ())?;
+
+                let allowed = safety == UndoSafety::Safe
+                    || (safety == UndoSafety::Risky && mode == UndoMode::Risky);
+
+                if allowed {
+                    println!("Undoing task: {}", name);
+                    module.call_method::<()>("undo", ())?;
+                };
             }
         }
         Commands::Status => {
