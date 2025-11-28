@@ -6,5 +6,5 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }
 color-eyre = "0.6.5"
-mlua = { version = "0.11.5", features = ["lua51", "serde", "vendored"] }
+mlua = { version = "0.11.5", features = [ "anyhow", "lua51", "serde", "vendored"] }
 serde = { version = "1.0.228", features = ["derive"] }

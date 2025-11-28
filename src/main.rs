@@ -2,8 +2,10 @@ use std::fs;
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
+use color_eyre::eyre::Result as EyreResult;
 use mlua::{
-    AnyUserData, Lua, LuaSerdeExt, ObjectLike, Result, Table, UserData, UserDataMethods, Value,
+    AnyUserData, Lua, LuaSerdeExt, ObjectLike, Result as LuaResult, Table, UserData,
+    UserDataMethods, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -56,10 +58,10 @@ pub enum UndoMode {
 }
 
 pub trait Module {
-    fn apply(&self) -> Result<()>;
-    fn undo(&self) -> Result<()>;
+    fn apply(&self) -> LuaResult<()>;
+    fn undo(&self) -> LuaResult<()>;
     fn undo_safety(&self) -> UndoSafety;
-    fn state(&self) -> Result<TaskState>;
+    fn state(&self) -> LuaResult<TaskState>;
 }
 
 pub struct Echo {
@@ -67,12 +69,12 @@ pub struct Echo {
 }
 
 impl Module for Echo {
-    fn apply(&self) -> Result<()> {
+    fn apply(&self) -> LuaResult<()> {
         println!("{}", self.message);
         Ok(())
     }
 
-    fn undo(&self) -> Result<()> {
+    fn undo(&self) -> LuaResult<()> {
         Ok(())
     }
 
@@ -80,7 +82,7 @@ impl Module for Echo {
         UndoSafety::Safe
     }
 
-    fn state(&self) -> Result<TaskState> {
+    fn state(&self) -> LuaResult<TaskState> {
         Ok(TaskState::Stateless)
     }
 }
@@ -90,13 +92,13 @@ pub struct File {
 }
 
 impl Module for File {
-    fn apply(&self) -> Result<()> {
+    fn apply(&self) -> LuaResult<()> {
         fs::write(&self.path, b"Created by nucleos")?;
         println!("File created: {}", self.path);
         Ok(())
     }
 
-    fn undo(&self) -> Result<()> {
+    fn undo(&self) -> LuaResult<()> {
         if Path::new(&self.path).exists() {
             fs::remove_file(&self.path)?;
             println!("File removed: {}", self.path);
@@ -108,7 +110,7 @@ impl Module for File {
         UndoSafety::Safe
     }
 
-    fn state(&self) -> Result<TaskState> {
+    fn state(&self) -> LuaResult<TaskState> {
         let exists = Path::new(&self.path).exists();
         if exists {
             Ok(TaskState::Applied)
@@ -148,7 +150,7 @@ impl UserData for File {
     }
 }
 
-fn register_builtins(lua: &Lua) -> Result<()> {
+fn register_builtins(lua: &Lua) -> EyreResult<()> {
     let builtin = lua.create_table()?;
 
     let echo = lua.create_function(|_, opts: Table| {
@@ -170,7 +172,9 @@ fn register_builtins(lua: &Lua) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn main() -> EyreResult<()> {
+    color_eyre::install()?;
+
     let cli = Cli::parse();
 
     let lua = Lua::new();
