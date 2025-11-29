@@ -8,6 +8,8 @@ use mlua::{
     UserDataMethods, Value,
 };
 use serde::{Deserialize, Serialize};
+use tracing::{error, info, warn};
+use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Parser)]
 #[command(name = "nucleos")]
@@ -38,7 +40,7 @@ pub enum TaskState {
     Stateless,
 }
 
-#[derive(PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UndoSafety {
     /// Fully revertible without side effects
@@ -175,14 +177,21 @@ fn register_builtins(lua: &Lua) -> EyreResult<()> {
 fn main() -> EyreResult<()> {
     color_eyre::install()?;
 
+    fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .pretty()
+        .init();
+
     let cli = Cli::parse();
+
+    info!("Starting nucleos");
 
     let lua = Lua::new();
     register_builtins(&lua)?;
 
-    let config: Table = lua
-        .load(&std::fs::read_to_string("config/example/nucleos.lua")?)
-        .eval()?;
+    let config_path = "config/example/nucleos.lua";
+    info!(path = config_path, "Loading Lua config");
+    let config: Table = lua.load(&fs::read_to_string(config_path)?).eval()?;
     let tasks_table: Table = config.get("tasks")?;
 
     match cli.command {
@@ -190,8 +199,10 @@ fn main() -> EyreResult<()> {
             for pair in tasks_table.pairs::<String, Table>() {
                 let (name, task_table) = pair?;
                 let module: mlua::AnyUserData = task_table.get("module")?;
-                println!("Applying task: {}", name);
-                module.call_method::<()>("apply", ())?;
+                info!(task = %name, "Applying task");
+                if let Err(e) = module.call_method::<()>("apply", ()) {
+                    error!(task = %name, error = %e, "Failed to apply task");
+                }
             }
         }
         Commands::Undo { risky } => {
@@ -200,6 +211,7 @@ fn main() -> EyreResult<()> {
             } else {
                 UndoMode::Safe
             };
+            info!(risky = %risky, "Undoing tasks");
 
             for pair in tasks_table.pairs::<String, Table>() {
                 let (name, task_table) = pair?;
@@ -211,13 +223,17 @@ fn main() -> EyreResult<()> {
                     || (safety == UndoSafety::Risky && mode == UndoMode::Risky);
 
                 if allowed {
-                    println!("Undoing task: {}", name);
-                    module.call_method::<()>("undo", ())?;
+                    info!(task = %name, safety = ?safety, "Undoing task");
+                    if let Err(e) = module.call_method::<()>("undo", ()) {
+                        error!(task = %name, error = %e, "Failed to undo task");
+                    }
+                } else {
+                    warn!(task = %name, safety = ?safety, "Skipping undo due to safety restrictions");
                 };
             }
         }
         Commands::Status => {
-            println!("Tasks loaded:");
+            info!("Listing task status");
             for pair in tasks_table.pairs::<String, Table>() {
                 let (name, task_table) = pair?;
                 let module: AnyUserData = task_table.get("module")?;
@@ -228,5 +244,6 @@ fn main() -> EyreResult<()> {
         }
     }
 
+    info!("Done");
     Ok(())
 }
