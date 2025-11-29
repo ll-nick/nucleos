@@ -25,7 +25,7 @@ return {
                 -- name = "A human friendly name", -- TODO
                 -- description = "A description of the task", -- TODO
 
-                -- enabled = true, -- TODO
+                enabled = true,
                 -- enabled = { apply = true, undo = true }, -- TODO
                 -- enabled = function() return true end, -- TODO
 

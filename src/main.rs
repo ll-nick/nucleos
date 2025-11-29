@@ -152,6 +152,17 @@ impl UserData for File {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaskOpts {
+    pub enabled: bool,
+}
+
+impl Default for TaskOpts {
+    fn default() -> Self {
+        TaskOpts { enabled: true }
+    }
+}
+
 fn register_builtins(lua: &Lua) -> EyreResult<()> {
     let builtin = lua.create_table()?;
 
@@ -199,6 +210,19 @@ fn main() -> EyreResult<()> {
             for pair in tasks_table.pairs::<String, Table>() {
                 let (name, task_table) = pair?;
                 let module: mlua::AnyUserData = task_table.get("module")?;
+
+                let opts_table: Option<Table> = task_table.get("opts").ok();
+                let opts: TaskOpts = if let Some(table) = opts_table {
+                    lua.from_value(Value::Table(table))?
+                } else {
+                    TaskOpts::default()
+                };
+
+                if !opts.enabled {
+                    info!(task = %name, "Task is disabled; skipping");
+                    continue;
+                }
+
                 info!(task = %name, "Applying task");
                 if let Err(e) = module.call_method::<()>("apply", ()) {
                     error!(task = %name, error = %e, "Failed to apply task");
@@ -218,6 +242,18 @@ fn main() -> EyreResult<()> {
                 let module: AnyUserData = task_table.get("module")?;
                 let value: Value = module.call_method("undo_safety", ())?;
                 let safety: UndoSafety = lua.from_value(value)?;
+
+                let opts_table: Option<Table> = task_table.get("opts").ok();
+                let opts: TaskOpts = if let Some(table) = opts_table {
+                    lua.from_value(Value::Table(table))?
+                } else {
+                    TaskOpts::default()
+                };
+
+                if !opts.enabled {
+                    info!(task = %name, "Task is disabled; skipping undo");
+                    continue;
+                }
 
                 let allowed = safety == UndoSafety::Safe
                     || (safety == UndoSafety::Risky && mode == UndoMode::Risky);
