@@ -180,7 +180,9 @@ fn main() -> EyreResult<()> {
     let lua = Lua::new();
     register_builtins(&lua)?;
 
-    let config: Table = lua.load(&std::fs::read_to_string("config.lua")?).eval()?;
+    let config: Table = lua
+        .load(&std::fs::read_to_string("config/example/nucleos.lua")?)
+        .eval()?;
     let tasks_table: Table = config.get("tasks")?;
 
     match cli.command {
