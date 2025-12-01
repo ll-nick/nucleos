@@ -200,10 +200,21 @@ fn main() -> EyreResult<()> {
     let lua = Lua::new();
     register_builtins(&lua)?;
 
+    // Preload dependencies
+    let package: Table = lua.globals().get("package")?;
+    let preload: Table = package.get("preload")?;
+    let opts_src = include_str!("../lua/nucleos/opts.lua");
+    preload.set("nucleos.opts", lua.load(opts_src).into_function()?)?;
+
+    // Load task compiler
+    let compiler_src = include_str!("../lua/nucleos/compiler.lua");
+    let compiler: mlua::Table = lua.load(compiler_src).eval()?;
+
     let config_path = "config/example/nucleos.lua";
     info!(path = config_path, "Loading Lua config");
     let config: Table = lua.load(&fs::read_to_string(config_path)?).eval()?;
-    let tasks_table: Table = config.get("tasks")?;
+
+    let tasks_table: mlua::Table = compiler.call_method("compile", (config,))?;
 
     match cli.command {
         Commands::Apply => {

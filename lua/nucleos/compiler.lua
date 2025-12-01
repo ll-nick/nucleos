@@ -33,7 +33,7 @@ local function process_group(prefix, node, inherited_opts, out)
     return out
 end
 
-function Compiler.compile(config)
+function Compiler:compile(config)
     local tasks = config.tasks or {}
     local flat = process_group(nil, tasks)
     return flat
