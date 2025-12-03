@@ -245,10 +245,12 @@ fn main() -> EyreResult<()> {
     let preload: Table = package.get("preload")?;
 
     let logging_src = include_str!("../lua/nucleos/logging.lua");
+    let merging_src = include_str!("../lua/nucleos/merging.lua");
     let opts_src = include_str!("../lua/nucleos/opts.lua");
     let utils_src = include_str!("../lua/nucleos/utils.lua");
 
     preload.set("nucleos.logging", lua.load(logging_src).into_function()?)?;
+    preload.set("nucleos.merging", lua.load(merging_src).into_function()?)?;
     preload.set("nucleos.utils", lua.load(utils_src).into_function()?)?;
     preload.set("nucleos.opts", lua.load(opts_src).into_function()?)?;
 
