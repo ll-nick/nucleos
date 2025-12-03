@@ -8,7 +8,7 @@ use mlua::{
     UserDataMethods, Value,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Parser)]
@@ -163,6 +163,45 @@ impl Default for TaskOpts {
     }
 }
 
+fn register_nucleos(lua: &Lua) -> EyreResult<()> {
+    let nucleos = lua.create_table()?;
+    lua.globals().set("nucleos", nucleos)?;
+    Ok(())
+}
+
+fn register_logging(lua: &Lua) -> EyreResult<()> {
+    let logging = lua.create_table()?;
+
+    let debug = lua.create_function(|_, msg: String| {
+        debug!(target: "lua", "{msg}");
+        Ok(())
+    })?;
+    logging.set("debug", debug)?;
+
+    let info = lua.create_function(|_, msg: String| {
+        info!(target: "lua", "{msg}");
+        Ok(())
+    })?;
+    logging.set("info", info)?;
+
+    let warn = lua.create_function(|_, msg: String| {
+        warn!(target: "lua", "{msg}");
+        Ok(())
+    })?;
+    logging.set("warn", warn)?;
+
+    let error = lua.create_function(|_, msg: String| {
+        error!(target: "lua", "{msg}");
+        Ok(())
+    })?;
+    logging.set("error", error)?;
+
+    let nucleos = lua.globals().get::<Table>("nucleos")?;
+    nucleos.set("logging", logging)?;
+
+    Ok(())
+}
+
 fn register_builtins(lua: &Lua) -> EyreResult<()> {
     let builtin = lua.create_table()?;
 
@@ -178,9 +217,8 @@ fn register_builtins(lua: &Lua) -> EyreResult<()> {
     })?;
     builtin.set("file", file)?;
 
-    let nucleos = lua.create_table()?;
-    nucleos.set("builtin", builtin.clone())?;
-    lua.globals().set("nucleos", nucleos)?;
+    let nucleos = lua.globals().get::<Table>("nucleos")?;
+    nucleos.set("builtin", builtin)?;
 
     Ok(())
 }
@@ -198,12 +236,16 @@ fn main() -> EyreResult<()> {
     info!("Starting nucleos");
 
     let lua = Lua::new();
+    register_nucleos(&lua)?;
+    register_logging(&lua)?;
     register_builtins(&lua)?;
 
     // Preload dependencies
     let package: Table = lua.globals().get("package")?;
     let preload: Table = package.get("preload")?;
     let opts_src = include_str!("../lua/nucleos/opts.lua");
+    let utils_src = include_str!("../lua/nucleos/utils.lua");
+    preload.set("nucleos.utils", lua.load(utils_src).into_function()?)?;
     preload.set("nucleos.opts", lua.load(opts_src).into_function()?)?;
 
     // Load task compiler

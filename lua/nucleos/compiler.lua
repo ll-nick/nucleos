@@ -1,4 +1,6 @@
+local log = nucleos.logging
 local Opts = require("nucleos.opts")
+local utils = require("nucleos.utils")
 
 local Compiler = {}
 
@@ -36,6 +38,8 @@ end
 function Compiler:compile(config)
     local tasks = config.tasks or {}
     local flat = process_group(nil, tasks)
+
+    log.debug("Compiled tasks:\n" .. utils.table_to_string(flat))
     return flat
 end
 
