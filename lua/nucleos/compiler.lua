@@ -1,4 +1,4 @@
-local log = nucleos.logging
+local log = require("nucleos.logging")
 local Opts = require("nucleos.opts")
 local utils = require("nucleos.utils")
 
