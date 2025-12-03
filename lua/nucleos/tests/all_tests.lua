@@ -1,6 +1,5 @@
 package.path = "lua/?.lua;" .. package.path
 
--- List your test files here
 local files = {
     "lua/nucleos/tests/test_opts.lua",
 }

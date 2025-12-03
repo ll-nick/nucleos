@@ -29,12 +29,8 @@ function Opts.new(tbl)
 
     tbl = validate_opts(tbl)
 
-    -- fill in defaults and validate types
     for k, info in pairs(schema) do
-        local val = tbl[k]
-
-        -- use default if not provided
-        if val == nil then
+        if tbl[k] == nil then
             tbl[k] = info.default
         end
     end
@@ -47,7 +43,7 @@ function Opts:merge(child)
         if child[key] ~= nil and info.merge then
             self[key] = info.merge(self[key], child[key])
         elseif child[key] ~= nil then
-            self[key] = child[key] -- fallback: overwrite
+            error(string.format("No merge function defined for option '%s'", key))
         end
     end
 
