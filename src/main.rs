@@ -47,7 +47,7 @@ fn main() -> EyreResult<()> {
 
     info!("Starting nucleos");
 
-    let lua_env = LuaEnvironment::new()?;
+    let lua_env = LuaEnvironment::try_new()?;
     let config_path = Path::new("config/example/nucleos.lua");
     let tasks = lua_env.load_tasks(config_path)?;
 

@@ -95,7 +95,7 @@ pub struct LuaEnvironment {
 }
 
 impl LuaEnvironment {
-    pub fn new() -> Result<Self> {
+    pub fn try_new() -> Result<Self> {
         let lua = Lua::new();
 
         register_nucleos(&lua)?;
