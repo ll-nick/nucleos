@@ -1,6 +1,7 @@
 package.path = "lua/?.lua;" .. package.path
 
 local files = {
+    "lua/nucleos/tests/test_compiler.lua",
     "lua/nucleos/tests/test_opts.lua",
 }
 
