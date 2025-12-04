@@ -38,11 +38,11 @@ function Opts.new(tbl)
     return tbl
 end
 
-function Opts:merge(child)
+function Opts:merge(parent)
     for key, info in pairs(schema) do
-        if child[key] ~= nil and info.merge then
-            self[key] = info.merge(self[key], child[key])
-        elseif child[key] ~= nil then
+        if parent[key] ~= nil and info.merge then
+            self[key] = info.merge(self[key], parent[key])
+        elseif parent[key] ~= nil then
             error(string.format("No merge function defined for option '%s'", key))
         end
     end

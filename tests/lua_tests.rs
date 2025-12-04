@@ -7,6 +7,8 @@ use mlua::Lua;
 fn run_lua_tests() -> Result<()> {
     let lua = Lua::new();
 
+    // TODO: Load lua environment just like in the main application
+
     let test_runner_path = "lua/nucleos/tests/all_tests.lua";
     lua.load(&fs::read_to_string(test_runner_path)?).exec()?;
 
