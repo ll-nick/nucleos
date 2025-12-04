@@ -78,6 +78,7 @@ local function process_group(prefix, list, inherited_opts, out)
 end
 
 function Compiler:compile(config)
+    log.debug("Received config:\n" .. utils.table_to_string(config))
     local tasks = config.tasks or {}
     local flat = process_group(nil, tasks)
 
