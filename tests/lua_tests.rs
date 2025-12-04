@@ -1,16 +1,18 @@
 use std::fs;
 
 use color_eyre::Result;
-use mlua::Lua;
+
+use nucleos::lua::LuaEnvironment;
 
 #[test]
 fn run_lua_tests() -> Result<()> {
-    let lua = Lua::new();
-
-    // TODO: Load lua environment just like in the main application
+    let lua_env = LuaEnvironment::new()?;
 
     let test_runner_path = "lua/nucleos/tests/all_tests.lua";
-    lua.load(&fs::read_to_string(test_runner_path)?).exec()?;
+    lua_env
+        .lua
+        .load(&fs::read_to_string(test_runner_path)?)
+        .exec()?;
 
     Ok(())
 }
