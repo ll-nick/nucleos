@@ -5,7 +5,7 @@ use color_eyre::eyre::Result;
 use mlua::{Lua, LuaSerdeExt, ObjectLike, Table, Value};
 use tracing::{debug, error, info, warn};
 
-use crate::module::{Copy, Echo, LuaModule};
+use crate::module::{Copy, Echo, Link, LuaModule};
 use crate::task::{Task, TaskOpts};
 
 fn register_nucleos(lua: &Lua) -> Result<()> {
@@ -86,6 +86,14 @@ fn register_builtin_modules(lua: &Lua) -> Result<()> {
         lua.create_userdata(LuaModule(Box::new(Copy { src, content, dest, force })))
     })?;
     builtin.set("copy", copy_ctor)?;
+
+    let link_ctor = lua.create_function(|lua, opts: Table| {
+        let src: String = opts.get("src")?;
+        let dest: String = opts.get("dest")?;
+        let force: bool = opts.get("force").unwrap_or(false);
+        lua.create_userdata(LuaModule(Box::new(Link { src, dest, force })))
+    })?;
+    builtin.set("link", link_ctor)?;
 
     Ok(())
 }

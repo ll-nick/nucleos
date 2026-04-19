@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs as unix_fs;
 use std::path::Path;
 
 use mlua::{LuaSerdeExt, Result, UserData, UserDataMethods, Value};
@@ -219,6 +220,109 @@ impl Module for Copy {
             Reversibility::Imperfect {
                 hint: "file was overwritten; prior contents were captured but permissions \
                        and metadata may differ"
+                    .to_string(),
+            }
+        } else {
+            Reversibility::Reversible
+        }
+    }
+}
+
+// ---------- Link ----------
+
+/// Creates a symlink at `dest` pointing to `src`. Refuses if `dest` already exists
+/// unless `force = true`. If the prior destination was not a symlink it cannot be
+/// restored, hence Imperfect reversibility when force is used.
+pub struct Link {
+    pub src: String,
+    pub dest: String,
+    pub force: bool,
+}
+
+impl Link {
+    fn snapshot(&self, state: serde_json::Value) -> Snapshot {
+        make_snapshot(
+            "link",
+            serde_json::json!({ "src": self.src, "dest": self.dest, "force": self.force }),
+            state,
+        )
+    }
+}
+
+impl Module for Link {
+    fn apply(&self, snapshot: Option<&Snapshot>) -> Result<ApplyResult> {
+        let dest = Path::new(&self.dest);
+        let src = Path::new(&self.src);
+
+        if let Some(existing) = snapshot {
+            // We own this symlink — re-create if it drifted or was removed.
+            let already_correct = dest.is_symlink()
+                && fs::read_link(dest).ok().as_deref() == Some(src);
+            if already_correct {
+                return Ok(ApplyResult {
+                    changed: false,
+                    snapshot: Some(self.snapshot(existing.state.clone())),
+                });
+            }
+            if dest.exists() || dest.is_symlink() {
+                fs::remove_file(dest).map_err(mlua::Error::external)?;
+            }
+            unix_fs::symlink(src, dest).map_err(mlua::Error::external)?;
+            return Ok(ApplyResult {
+                changed: true,
+                snapshot: Some(self.snapshot(existing.state.clone())),
+            });
+        }
+
+        // First apply: refuse if dest exists unless force = true.
+        if dest.exists() || dest.is_symlink() {
+            if !self.force {
+                return Err(mlua::Error::runtime(format!(
+                    "link: '{}' already exists; use force = true to overwrite",
+                    self.dest
+                )));
+            }
+            // Capture the prior target only if it was a symlink; non-symlinks cannot be restored.
+            let prior_target = dest
+                .is_symlink()
+                .then(|| fs::read_link(dest).ok())
+                .flatten()
+                .and_then(|p| p.to_str().map(String::from));
+            fs::remove_file(dest).map_err(mlua::Error::external)?;
+            unix_fs::symlink(src, dest).map_err(mlua::Error::external)?;
+            return Ok(ApplyResult {
+                changed: true,
+                snapshot: Some(self.snapshot(serde_json::json!({
+                    "existed_before": true,
+                    "prior_target": prior_target,
+                }))),
+            });
+        }
+
+        unix_fs::symlink(src, dest).map_err(mlua::Error::external)?;
+        Ok(ApplyResult {
+            changed: true,
+            snapshot: Some(self.snapshot(serde_json::json!({ "existed_before": false }))),
+        })
+    }
+
+    fn undo(&self, snapshot: &Snapshot) -> Result<()> {
+        let dest = Path::new(&self.dest);
+        if dest.is_symlink() {
+            fs::remove_file(dest).map_err(mlua::Error::external)?;
+        }
+        let existed_before = snapshot.state["existed_before"].as_bool().unwrap_or(false);
+        if existed_before && let Some(prior) = snapshot.state["prior_target"].as_str() {
+            unix_fs::symlink(prior, dest).map_err(mlua::Error::external)?;
+        }
+        Ok(())
+    }
+
+    fn reversibility(&self) -> Reversibility {
+        if self.force {
+            Reversibility::Imperfect {
+                hint: "symlink destination was overwritten; if the prior destination was not \
+                       a symlink it could not be restored"
                     .to_string(),
             }
         } else {
