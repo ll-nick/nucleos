@@ -5,7 +5,7 @@ use color_eyre::eyre::Result;
 use mlua::{Lua, LuaSerdeExt, ObjectLike, Table, Value};
 use tracing::{debug, error, info, warn};
 
-use crate::module::{Echo, File};
+use crate::module::{Echo, LuaModule};
 use crate::task::{Task, TaskOpts};
 
 fn register_nucleos(lua: &Lua) -> Result<()> {
@@ -69,23 +69,14 @@ fn load_nucleos_modules(lua: &Lua) -> Result<()> {
 }
 
 fn register_builtin_modules(lua: &Lua) -> Result<()> {
-    // TODO: Can we register modules in the module files themselves?
     let nucleos: Table = lua.globals().get("nucleos")?;
     let builtin: Table = nucleos.get("builtin")?;
 
-    // echo
-    let echo_ctor = lua.create_function(|_, opts: Table| {
+    let echo_ctor = lua.create_function(|lua, opts: Table| {
         let message: String = opts.get("message")?;
-        Ok(Echo { message })
+        lua.create_userdata(LuaModule(Box::new(Echo { message })))
     })?;
     builtin.set("echo", echo_ctor)?;
-
-    // file
-    let file_ctor = lua.create_function(|_, opts: Table| {
-        let path: String = opts.get("path")?;
-        Ok(File { path })
-    })?;
-    builtin.set("file", file_ctor)?;
 
     Ok(())
 }
@@ -114,18 +105,16 @@ impl LuaEnvironment {
 
         let mut tasks = Vec::new();
 
-        for pair in tasks_table.pairs::<String, Table>() {
-            let (name, task_table) = pair?;
+        for pair in tasks_table.pairs::<i64, Table>() {
+            let (_index, task_table) = pair?;
+
+            let id: String = task_table.get("id")?;
             let module = task_table.get("module")?;
 
-            // opts is optional
-            let opts_table: Option<Table> = task_table.get("opts").ok();
-            let opts = match opts_table {
-                Some(o) => self.lua.from_value(Value::Table(o))?,
-                None => TaskOpts::default(),
-            };
+            let opts_table: Table = task_table.get("opts")?;
+            let opts: TaskOpts = self.lua.from_value(Value::Table(opts_table))?;
 
-            tasks.push(Task { name, module, opts });
+            tasks.push(Task { id, module, opts });
         }
 
         Ok(tasks)

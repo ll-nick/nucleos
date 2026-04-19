@@ -1,99 +1,92 @@
-use std::fs;
-use std::path::Path;
+use mlua::{LuaSerdeExt, Result, UserData, UserDataMethods, Value};
+use serde::{Deserialize, Serialize};
 
-use mlua::{LuaSerdeExt, Result, UserData, UserDataMethods};
+// ---------- Core types ----------
 
-use crate::task::{TaskState, UndoSafety};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub module_type: String,
+    pub params: serde_json::Value,
+    pub state: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApplyResult {
+    pub changed: bool,
+    pub snapshot: Option<Snapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Reversibility {
+    Reversible,
+    Imperfect { hint: String },
+    Irreversible,
+}
+
+// ---------- Module trait ----------
 
 pub trait Module {
-    fn apply(&self) -> Result<()>;
-    fn undo(&self) -> Result<()>;
-    fn undo_safety(&self) -> UndoSafety;
-    fn state(&self) -> Result<TaskState>;
+    fn check_requirements(&self) -> Result<()> {
+        Ok(())
+    }
+    /// Idempotent: checks current state against desired state, acts only if needed.
+    /// Receives the previously stored snapshot if one exists.
+    fn apply(&self, snapshot: Option<&Snapshot>) -> Result<ApplyResult>;
+    fn undo(&self, snapshot: &Snapshot) -> Result<()>;
+    fn reversibility(&self) -> Reversibility;
 }
+
+// ---------- LuaModule wrapper ----------
+
+pub struct LuaModule(pub Box<dyn Module>);
+
+impl UserData for LuaModule {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("check_requirements", |_, this, ()| {
+            this.0.check_requirements()
+        });
+
+        methods.add_method("apply", |lua, this, snapshot_value: Value| {
+            let snapshot: Option<Snapshot> = match snapshot_value {
+                Value::Nil => None,
+                v => Some(lua.from_value(v)?),
+            };
+            let result = this.0.apply(snapshot.as_ref())?;
+            lua.to_value(&result)
+        });
+
+        methods.add_method("undo", |lua, this, snapshot_value: Value| {
+            let snapshot: Snapshot = lua.from_value(snapshot_value)?;
+            this.0.undo(&snapshot)
+        });
+
+        methods.add_method("reversibility", |lua, this, ()| {
+            lua.to_value(&this.0.reversibility())
+        });
+    }
+}
+
+// ---------- Echo ----------
 
 pub struct Echo {
     pub message: String,
 }
 
 impl Module for Echo {
-    fn apply(&self) -> Result<()> {
+    fn apply(&self, _snapshot: Option<&Snapshot>) -> Result<ApplyResult> {
         println!("{}", self.message);
+        Ok(ApplyResult {
+            changed: true,
+            snapshot: None,
+        })
+    }
+
+    fn undo(&self, _snapshot: &Snapshot) -> Result<()> {
         Ok(())
     }
 
-    fn undo(&self) -> Result<()> {
-        Ok(())
-    }
-
-    fn undo_safety(&self) -> UndoSafety {
-        UndoSafety::Safe
-    }
-
-    fn state(&self) -> Result<TaskState> {
-        Ok(TaskState::Stateless)
-    }
-}
-
-pub struct File {
-    pub path: String,
-}
-
-impl Module for File {
-    fn apply(&self) -> Result<()> {
-        fs::write(&self.path, b"Created by nucleos")?;
-        println!("File created: {}", self.path);
-        Ok(())
-    }
-
-    fn undo(&self) -> Result<()> {
-        if Path::new(&self.path).exists() {
-            fs::remove_file(&self.path)?;
-            println!("File removed: {}", self.path);
-        }
-        Ok(())
-    }
-
-    fn undo_safety(&self) -> UndoSafety {
-        UndoSafety::Safe
-    }
-
-    fn state(&self) -> Result<TaskState> {
-        let exists = Path::new(&self.path).exists();
-        if exists {
-            Ok(TaskState::Applied)
-        } else {
-            Ok(TaskState::NotApplied)
-        }
-    }
-}
-
-impl UserData for Echo {
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("apply", |_, this, ()| this.apply());
-        methods.add_method("undo", |_, this, ()| this.undo());
-        methods.add_method("undo_safety", |lua, this, ()| {
-            let s = this.undo_safety();
-            lua.to_value(&s)
-        });
-        methods.add_method("state", |lua, this, ()| {
-            let s = this.state()?;
-            lua.to_value(&s)
-        });
-    }
-}
-
-impl UserData for File {
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("apply", |_, this, ()| this.apply());
-        methods.add_method("undo", |_, this, ()| this.undo());
-        methods.add_method("undo_safety", |lua, this, ()| {
-            let s = this.undo_safety();
-            lua.to_value(&s)
-        });
-        methods.add_method("state", |lua, this, ()| {
-            let s = this.state()?;
-            lua.to_value(&s)
-        });
+    fn reversibility(&self) -> Reversibility {
+        Reversibility::Irreversible
     }
 }

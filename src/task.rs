@@ -2,24 +2,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskState {
+pub enum TaskStatus {
     Applied,
-    OutOfDate,
     NotApplied,
-    Stateless,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UndoSafety {
-    /// Fully revertible without side effects
-    Safe,
-
-    /// Reversible but may have side effects
-    Risky,
-
-    /// Cannot be undone automatically
-    Impossible,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,7 +19,7 @@ impl Default for TaskOpts {
 }
 
 pub struct Task {
-    pub name: String,
+    pub id: String,
     pub module: mlua::AnyUserData,
     pub opts: TaskOpts,
 }
