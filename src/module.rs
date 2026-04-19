@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use mlua::{LuaSerdeExt, Result, UserData, UserDataMethods, Value};
 use serde::{Deserialize, Serialize};
 
@@ -67,6 +70,16 @@ impl UserData for LuaModule {
     }
 }
 
+// ---------- Helpers ----------
+
+fn make_snapshot(module_type: &str, params: serde_json::Value, state: serde_json::Value) -> Snapshot {
+    Snapshot {
+        module_type: module_type.to_string(),
+        params,
+        state,
+    }
+}
+
 // ---------- Echo ----------
 
 pub struct Echo {
@@ -88,5 +101,128 @@ impl Module for Echo {
 
     fn reversibility(&self) -> Reversibility {
         Reversibility::Irreversible
+    }
+}
+
+// ---------- Copy ----------
+
+/// Copies a file from `src` to `dest`, or writes inline `content` to `dest`.
+/// Exactly one of `src` or `content` must be provided.
+/// Refuses if `dest` already exists unless `force = true`, in which case prior
+/// contents are captured in the snapshot for undo (Imperfect reversibility).
+/// If Nucleos owns the path (snapshot present) and content has drifted, it re-applies.
+pub struct Copy {
+    pub src: Option<String>,
+    pub content: Option<String>,
+    pub dest: String,
+    pub force: bool,
+}
+
+impl Copy {
+    fn resolve_content(&self) -> Result<String> {
+        match (&self.src, &self.content) {
+            (Some(src), None) => fs::read_to_string(src).map_err(mlua::Error::external),
+            (None, Some(c)) => Ok(c.clone()),
+            (Some(_), Some(_)) => Err(mlua::Error::runtime(
+                "copy: specify either src or content, not both",
+            )),
+            (None, None) => Err(mlua::Error::runtime(
+                "copy: either src or content is required",
+            )),
+        }
+    }
+
+    fn snapshot(&self, state: serde_json::Value) -> Snapshot {
+        make_snapshot(
+            "copy",
+            serde_json::json!({
+                "src": self.src,
+                "content": self.content,
+                "dest": self.dest,
+                "force": self.force,
+            }),
+            state,
+        )
+    }
+}
+
+impl Module for Copy {
+    fn apply(&self, snapshot: Option<&Snapshot>) -> Result<ApplyResult> {
+        let dest = Path::new(&self.dest);
+        let desired = self.resolve_content()?;
+
+        if let Some(existing) = snapshot {
+            // We own this file — re-apply if content drifted or file was deleted.
+            let already_correct = dest.exists()
+                && fs::read_to_string(dest)
+                    .map(|c| c == desired)
+                    .unwrap_or(false);
+            if already_correct {
+                return Ok(ApplyResult {
+                    changed: false,
+                    snapshot: Some(self.snapshot(existing.state.clone())),
+                });
+            }
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+            }
+            fs::write(dest, &desired).map_err(mlua::Error::external)?;
+            return Ok(ApplyResult {
+                changed: true,
+                snapshot: Some(self.snapshot(existing.state.clone())),
+            });
+        }
+
+        // First apply: refuse if dest exists unless force = true.
+        if dest.exists() {
+            if !self.force {
+                return Err(mlua::Error::runtime(format!(
+                    "copy: '{}' already exists; use force = true to overwrite",
+                    self.dest
+                )));
+            }
+            let prior = fs::read_to_string(dest).map_err(mlua::Error::external)?;
+            fs::write(dest, &desired).map_err(mlua::Error::external)?;
+            return Ok(ApplyResult {
+                changed: true,
+                snapshot: Some(self.snapshot(serde_json::json!({
+                    "existed_before": true,
+                    "prior_contents": prior,
+                }))),
+            });
+        }
+
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(mlua::Error::external)?;
+        }
+        fs::write(dest, &desired).map_err(mlua::Error::external)?;
+        Ok(ApplyResult {
+            changed: true,
+            snapshot: Some(self.snapshot(serde_json::json!({ "existed_before": false }))),
+        })
+    }
+
+    fn undo(&self, snapshot: &Snapshot) -> Result<()> {
+        let dest = Path::new(&self.dest);
+        let existed_before = snapshot.state["existed_before"].as_bool().unwrap_or(false);
+        if existed_before {
+            let prior = snapshot.state["prior_contents"].as_str().unwrap_or("");
+            fs::write(dest, prior).map_err(mlua::Error::external)?;
+        } else if dest.exists() {
+            fs::remove_file(dest).map_err(mlua::Error::external)?;
+        }
+        Ok(())
+    }
+
+    fn reversibility(&self) -> Reversibility {
+        if self.force {
+            Reversibility::Imperfect {
+                hint: "file was overwritten; prior contents were captured but permissions \
+                       and metadata may differ"
+                    .to_string(),
+            }
+        } else {
+            Reversibility::Reversible
+        }
     }
 }

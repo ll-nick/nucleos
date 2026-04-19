@@ -3,60 +3,69 @@ return {
         -- log_file = "/var/log/nucleos.log", -- TODO
         -- data_dir = "XDG_DATA_HOME/nucleos", -- TODO
         -- parallel_tasks = 4, -- TODO
-        -- tags = { "default" = true, "tag1" = true, "tag2" = false }, -- TODO -- With default = true, run all tasks except explicitly disabled ones, or with default = false, run only explicitly enabled ones
-        -- merging_strategy = { name = "lowest_level", ...} -- TODO
+        -- tags = { default = true, tag1 = true, tag2 = false }, -- TODO
+        -- merging_strategy = { name = "lowest_level" }, -- TODO
     },
     tasks = {
-        -- Tasks can be grouped into named groups which also prevents name collisions
-        -- Below task would be named "some_group.test_task"
+        -- Tasks can be grouped into named groups which also prevents name collisions.
+        -- The task below would have id "dotfiles.zshrc".
         {
-            "some_group",
-            opts = {}, -- Groups take the same options table as tasks. Merging group options into task options needs to be defined (e.g., enabled at group level disables all tasks in group), see merging_strategie global setting
+            "dotfiles",
+            -- Groups take the same opts table as tasks. Options are merged into child
+            -- tasks (e.g. enabled = false on a group disables all tasks inside it).
+            opts = {},
             tasks = {
                 {
-                    "test_task",
-                    module = nucleos.builtin.file({
-                        path = "/tmp/test.txt",
+                    "zshrc",
+                    module = nucleos.builtin.copy({
+                        -- src: path to the source file (absolute, or relative to config dir).
+                        -- content: inline string content (mutually exclusive with src).
+                        src = "/tmp/nucleos-example-source.txt",
+                        dest = "/tmp/nucleos-example-dest.txt",
+                        -- force = true, -- overwrite dest if it already exists (Imperfect undo)
+                        -- mode = "0644",  -- TODO
+                        -- owner = "user", -- TODO
+                        -- group = "group", -- TODO
                     }),
-                    -- The opts table can be defined for every individual task or for task groups
-                    -- opts tables get merged using different strategies
-                    -- e.g. tags are merged as a union, user is taken by the lowest level definition (task opts beats group opts)
                     opts = {
                         -- name = "A human friendly name", -- TODO
-                        -- description = "A description of the task", -- TODO
+                        -- description = "Description of what this task does", -- TODO
 
                         enabled = true,
                         -- enabled = { apply = true, undo = true }, -- TODO
                         -- enabled = function() return true end, -- TODO
 
-                        -- undo_mode = "safe|unsafe" -- TODO
                         -- depends_on = { "another_task" }, -- TODO
                         -- priority = 10, -- TODO
                         -- user = "root", -- TODO
                         -- environment = { VAR1 = "value1", VAR2 = "value2" }, -- TODO
                         -- tags = { "tag1", "tag2" }, -- TODO
-                        -- dry_run = true, -- TODO
-                        -- log_level = "info", -- TODO
 
                         -- Callbacks
-                        -- before_apply = function() end, TODO
-                        -- after_apply = function() end, TODO
-                        -- before_undo = function() end, TODO
-                        -- after_undo = function() end, TODO
+                        -- before_apply = function() end, -- TODO
+                        -- after_apply = function() end, -- TODO
+                        -- before_undo = function() end, -- TODO
+                        -- after_undo = function() end, -- TODO
                         -- on_error = function() end, -- TODO
                     },
                 },
                 {
-                    "another_task ",
+                    "symlink_example",
+                    module = nucleos.builtin.link({
+                        src = "/tmp/nucleos-example-source.txt",
+                        dest = "/tmp/nucleos-example-link.txt",
+                        -- force = true,
+                    }),
+                },
+                {
+                    "greeting",
                     module = nucleos.builtin.echo({
-                        message = "Hello, World!",
+                        message = "Hello from nucleos!",
                     }),
                 },
             },
-            -- TODO: Structured config by merging tasks from multiple sources
-            -- Import all tasks from Lua files in the specified directory
-            -- Each Lua file inside those directories should return a list of task definitions, optionally further grouped and with options
-            -- { import = "path/to/some/directory" } -- A sane default would probably be "tasks/"
+            -- TODO: Import tasks from Lua files in a directory
+            -- { import = "tasks/" },
         },
     },
 }
