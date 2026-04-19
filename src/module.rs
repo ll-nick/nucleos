@@ -73,7 +73,11 @@ impl UserData for LuaModule {
 
 // ---------- Helpers ----------
 
-fn make_snapshot(module_type: &str, params: serde_json::Value, state: serde_json::Value) -> Snapshot {
+fn make_snapshot(
+    module_type: &str,
+    params: serde_json::Value,
+    state: serde_json::Value,
+) -> Snapshot {
     Snapshot {
         module_type: module_type.to_string(),
         params,
@@ -256,8 +260,8 @@ impl Module for Link {
 
         if let Some(existing) = snapshot {
             // We own this symlink — re-create if it drifted or was removed.
-            let already_correct = dest.is_symlink()
-                && fs::read_link(dest).ok().as_deref() == Some(src);
+            let already_correct =
+                dest.is_symlink() && fs::read_link(dest).ok().as_deref() == Some(src);
             if already_correct {
                 return Ok(ApplyResult {
                     changed: false,

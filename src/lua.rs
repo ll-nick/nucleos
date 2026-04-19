@@ -83,7 +83,12 @@ fn register_builtin_modules(lua: &Lua) -> Result<()> {
         let content: Option<String> = opts.get("content").ok();
         let dest: String = opts.get("dest")?;
         let force: bool = opts.get("force").unwrap_or(false);
-        lua.create_userdata(LuaModule(Box::new(Copy { src, content, dest, force })))
+        lua.create_userdata(LuaModule(Box::new(Copy {
+            src,
+            content,
+            dest,
+            force,
+        })))
     })?;
     builtin.set("copy", copy_ctor)?;
 
